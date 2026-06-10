@@ -1,0 +1,157 @@
+.mobile-dashboard {
+  max-width: 1180px;
+  margin: auto;
+  display: grid;
+  gap: 18px;
+}
+
+.dash-hero-card {
+  background: radial-gradient(circle at top right, #14532d, #07111f 65%);
+  color: white;
+  border-radius: 30px;
+  padding: 24px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.dash-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.brand-pill {
+  background: white;
+  color: #0f172a;
+  padding: 9px 13px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.bell-btn {
+  border: none;
+  background: white;
+  width: 42px;
+  height: 42px;
+  border-radius: 16px;
+}
+
+.welcome-text {
+  margin: 26px 0 4px;
+  color: #dbeafe;
+  font-weight: 800;
+}
+
+.dash-hero-card h1 {
+  margin: 0;
+  font-size: 34px;
+}
+
+.role-pill {
+  display: inline-block;
+  margin-top: 6px;
+  color: #86efac;
+  font-weight: 900;
+}
+
+.workspace-card {
+  margin-top: 22px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.workspace-card p {
+  margin: 5px 0 0;
+  color: #d1fae5;
+}
+
+.quick-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.quick-stats div {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.quick-stats span,
+.quick-stats small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.quick-stats strong {
+  display: block;
+  font-size: 30px;
+  margin: 5px 0;
+}
+
+.section-heading h2 {
+  margin: 0;
+}
+
+.section-heading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.module-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 20px;
+  text-align: left;
+  box-shadow: var(--shadow);
+}
+
+.module-card:hover {
+  transform: translateY(-2px);
+}
+
+.module-icon {
+  width: 48px;
+  height: 48px;
+  background: #ecfdf5;
+  color: #059669;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+}
+
+.module-card h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.module-card p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .module-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .mobile-dashboard {
+    max-width: 430px;
+  }
+}

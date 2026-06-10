@@ -1,0 +1,104 @@
+# =========================
+# Dependencies
+# =========================
+node_modules/
+**/node_modules/
+
+# =========================
+# Environment Files
+# =========================
+.env
+.env.*
+**/.env
+**/.env.*
+
+# =========================
+# React / Vite Build
+# =========================
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# =========================
+# Backend Uploads & Runtime Files
+# =========================
+backend/uploads/
+backend/temp/
+backend/tmp/
+backend/logs/
+backend/cache/
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# IDE Files
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Coverage
+# =========================
+coverage/
+.nyc_output/
+
+# =========================
+# Testing
+# =========================
+.cypress/
+playwright-report/
+test-results/
+
+# =========================
+# Cache
+# =========================
+.cache/
+.parcel-cache/
+.eslintcache
+
+# =========================
+# Package Locks (Optional)
+# Keep these if working in team
+# =========================
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# =========================
+# Misc
+# =========================
+*.tgz
+*.zip
+*.tar.gz
+
+# =========================
+# Hostinger / Server Files
+# =========================
+backend/whatsapp-session/
+backend/wwebjs-cache/
+backend/chromium/
+backend/browser-cache/
+
+# =========================
+# Generated PDFs (Optional)
+# Uncomment if PDFs are generated dynamically
+# =========================
+# backend/generated-pdfs/
+# backend/pdfs/
