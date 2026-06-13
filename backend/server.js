@@ -32,7 +32,7 @@ const startServer = async () => {
     app.listen(PORT, async () => {
       console.log(`E2D backend running on port ${PORT}`);
 
-      await initWhatsapp();
+      //await initWhatsapp();
       startWhatsappBufferCron();
       startMaterialEscalationCron();
     });
