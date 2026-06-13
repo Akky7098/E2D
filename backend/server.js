@@ -12,10 +12,21 @@ const {
 
 const PORT = process.env.PORT || 5000;
 
+/* ================= HEALTH CHECK ================= */
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    application: "E2D Backend",
+    status: "Running",
+    timestamp: new Date(),
+  });
+});
+
+/* ================= START SERVER ================= */
+
 const startServer = async () => {
   try {
-    console.log("MONGO URI EXISTS:", !!process.env.MONGO_URI);
-
     await connectDB();
 
     app.listen(PORT, async () => {
@@ -26,7 +37,7 @@ const startServer = async () => {
       startMaterialEscalationCron();
     });
   } catch (error) {
-    console.error("Server startup failed:", error);
+    console.error("Server startup failed:", error.message);
     process.exit(1);
   }
 };
