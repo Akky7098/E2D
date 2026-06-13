@@ -222,13 +222,21 @@ const getEnquiries = async (req, res) => {
     const total = await Enquiry.countDocuments(filter);
 
     const enquiries = await Enquiry.find(filter)
-      .populate("materialCheckIds")
-      .populate("materialCheckId")
-      .populate("createdBy", "name email role")
-      .sort({ createdAt: -1 })
-      .skip((safePage - 1) * safeLimit)
-      .limit(safeLimit);
-
+  .populate({
+    path: "materialCheckIds",
+    select:
+      "lineNo status availability audioAttachment updatedByName updatedByRole updateSource updatedAt",
+  })
+  .populate({
+    path: "materialCheckId",
+    select:
+      "lineNo status availability audioAttachment updatedByName updatedByRole updateSource updatedAt",
+  })
+  .populate("createdBy", "name email role")
+  .sort({ createdAt: -1 })
+  .skip((safePage - 1) * safeLimit)
+  .limit(safeLimit);
+  
     return res.json({
       success: true,
       data: {

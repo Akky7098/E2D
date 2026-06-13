@@ -1,33 +1,3 @@
-2026/06/10-18:14:43.602 2db4 Reusing MANIFEST C:\Users\Admin3\OneDrive\Desktop\E2D\backend\whatsapp-sessions\session-e2d-material-availability\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
-2026/06/10-18:14:43.638 2db4 Recovering log #317
-2026/06/10-18:14:43.852 2db4 Reusing old log C:\Users\Admin3\OneDrive\Desktop\E2D\backend\whatsapp-sessions\session-e2d-material-availability\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000317.log 
-2026/06/10-18:14:59.562 2db4 Level-0 table #325: started
-2026/06/10-18:14:59.643 2db4 Level-0 table #325: 1490398 bytes OK
-2026/06/10-18:14:59.666 2db4 Delete type=0 #317
-2026/06/10-18:14:59.947 2db4 Compacting 1@1 + 4@2 files
-2026/06/10-18:15:00.366 2db4 Generated table #326@1: 77360 keys, 2303165 bytes
-2026/06/10-18:15:00.689 2db4 Generated table #327@1: 46050 keys, 2206318 bytes
-2026/06/10-18:15:00.881 2db4 Generated table #328@1: 17041 keys, 2180627 bytes
-2026/06/10-18:15:01.257 2db4 Generated table #329@1: 50517 keys, 2181467 bytes
-2026/06/10-18:15:01.257 2db4 Compacted 1@1 + 4@2 files => 8871577 bytes
-2026/06/10-18:15:01.293 2db4 compacted to: files[ 0 0 4 0 0 0 0 ]
-2026/06/10-18:16:58.084 2db4 Level-0 table #331: started
-2026/06/10-18:16:58.149 2db4 Level-0 table #331: 1074931 bytes OK
-2026/06/10-18:16:58.153 2db4 Delete type=2 #319
-2026/06/10-18:16:58.153 2db4 Delete type=2 #320
-2026/06/10-18:16:58.155 2db4 Delete type=2 #321
-2026/06/10-18:16:58.156 2db4 Delete type=2 #322
-2026/06/10-18:16:58.156 2db4 Delete type=0 #324
-2026/06/10-18:16:58.156 2db4 Delete type=2 #325
-2026/06/10-18:16:59.596 2db4 Compacting 1@1 + 4@2 files
-2026/06/10-18:17:00.820 2db4 Generated table #332@1: 79821 keys, 2307171 bytes
-2026/06/10-18:17:02.282 2db4 Generated table #333@1: 45747 keys, 2206514 bytes
-2026/06/10-18:17:03.438 2db4 Generated table #334@1: 16968 keys, 2181193 bytes
-2026/06/10-18:17:04.348 2db4 Generated table #335@1: 50432 keys, 2162806 bytes
-2026/06/10-18:17:04.348 2db4 Compacted 1@1 + 4@2 files => 8857684 bytes
-2026/06/10-18:17:04.429 2db4 compacted to: files[ 0 0 4 0 0 0 0 ]
-2026/06/10-18:17:04.637 2db4 Delete type=2 #326
-2026/06/10-18:17:04.688 2db4 Delete type=2 #327
-2026/06/10-18:17:04.688 2db4 Delete type=2 #328
-2026/06/10-18:17:04.752 2db4 Delete type=2 #329
-2026/06/10-18:17:04.753 2db4 Delete type=2 #331
+2026/06/13-14:55:47.719 1968 Reusing MANIFEST C:\Users\Admin3\OneDrive\Desktop\E2D\backend\whatsapp-sessions\session-e2d-material-availability\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/13-14:55:47.720 1968 Recovering log #419
+2026/06/13-14:55:47.741 1968 Reusing old log C:\Users\Admin3\OneDrive\Desktop\E2D\backend\whatsapp-sessions\session-e2d-material-availability\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000419.log 

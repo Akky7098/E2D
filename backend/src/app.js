@@ -7,6 +7,8 @@ const enquiryRoutes = require("./routes/enquiryRoutes");
 const materialCheckRoutes = require("./routes/materialCheckRoutes");
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
+const path = require("path");
+
 
 
 
@@ -17,6 +19,7 @@ app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);

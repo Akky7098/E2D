@@ -6,39 +6,11 @@ const MaterialCheck = require("../models/MaterialCheck");
 const WhatsappMessage = require("../models/WhatsappMessage");
 const WhatsappConversationBuffer = require("../models/WhatsappConversationBuffer");
 
-const {
-  extractMaterialFromText,
-  extractShedAvailabilityFromReply,
-  classifyIncomingWhatsappMessage,
-} = require("./aiExtractionService");
-
+const { extractMaterialFromText } = require("./aiExtractionService");
 const { assignShedByCategory } = require("./materialAssignmentService");
 const { findDuplicateEnquiry } = require("./duplicateEnquiryService");
 
 let client;
-
-const ACTIVE_CHECK_STATUSES = [
-  "pending",
-  "unclear",
-  "available",
-  "near_available",
-  "partial_available",
-  "not_available",
-];
-
-const extractEnquiryNoFromText = (text = "") => {
-  const match = text.match(/E2D-ENQ-\d+/i);
-  return match ? match[0].toUpperCase() : null;
-};
-
-const getQuotedMessageId = (msg) => {
-  return (
-    msg?._data?.quotedStanzaID ||
-    msg?._data?.quotedMsg?.id?.id ||
-    msg?._data?.quotedMessageId ||
-    null
-  );
-};
 
 const initWhatsapp = async () => {
   client = new Client({
@@ -65,15 +37,15 @@ const initWhatsapp = async () => {
     try {
       const body = msg.body?.trim() || "";
 
-if (shouldIgnoreWhatsappMessage(msg, body)) {
-  console.log("IGNORED WHATSAPP MESSAGE =>", msg.from, body);
-  return;
-}
+      if (shouldIgnoreWhatsappMessage(msg, body)) {
+        console.log("IGNORED WHATSAPP MESSAGE =>", msg.from, body);
+        return;
+      }
 
-console.log("WHATSAPP RECEIVED =>", msg.from);
-console.log("MESSAGE =>", body);
+      console.log("WHATSAPP RECEIVED =>", msg.from);
+      console.log("MESSAGE =>", body);
 
-await handleIncomingWhatsappMessage(msg);
+      await handleIncomingWhatsappMessage(msg);
     } catch (error) {
       console.error("WhatsApp message handling failed:", error.message);
     }
@@ -115,59 +87,6 @@ const safeSendWhatsappMessage = async (to, message) => {
   }
 };
 
-const findMaterialChecksForReply = async ({ from, body, msg }) => {
-  let pendingChecks = [];
-
-  const quotedMessageId = getQuotedMessageId(msg);
-
-  if (quotedMessageId) {
-    pendingChecks = await MaterialCheck.find({
-      lastWhatsappMessageId: { $regex: quotedMessageId },
-      status: { $in: ACTIVE_CHECK_STATUSES },
-    })
-      .populate("enquiryId")
-      .sort({ lineNo: 1 });
-
-    if (pendingChecks.length) {
-      console.log("Matched shed reply by quoted WhatsApp message");
-      return pendingChecks;
-    }
-  }
-
-  const enquiryNo = extractEnquiryNoFromText(body);
-
-  if (enquiryNo) {
-    const enquiry = await Enquiry.findOne({ enquiryNo });
-
-    if (enquiry) {
-      pendingChecks = await MaterialCheck.find({
-        enquiryId: enquiry._id,
-        status: { $in: ACTIVE_CHECK_STATUSES },
-      })
-        .populate("enquiryId")
-        .sort({ lineNo: 1 });
-
-      if (pendingChecks.length) {
-        console.log("Matched shed reply by enquiry number:", enquiryNo);
-        return pendingChecks;
-      }
-    }
-  }
-
-  pendingChecks = await MaterialCheck.find({
-    assignedWhatsappNumber: from,
-    status: { $in: ["pending", "unclear"] },
-  })
-    .populate("enquiryId")
-    .sort({ createdAt: -1 })
-    .limit(30);
-
-  if (pendingChecks.length) {
-    console.log("Matched shed reply by sender fallback:", from);
-  }
-
-  return pendingChecks;
-};
 const shouldIgnoreWhatsappMessage = (msg, body = "") => {
   const from = msg.from || "";
 
@@ -175,7 +94,7 @@ const shouldIgnoreWhatsappMessage = (msg, body = "") => {
   if (from === "status@broadcast") return true;
   if (from.endsWith("@newsletter")) return true;
 
-  // ignore groups for MVP
+  // Ignore groups for MVP
   if (from.endsWith("@g.us")) return true;
 
   const text = String(body || "").trim();
@@ -246,11 +165,9 @@ const shouldIgnoreWhatsappMessage = (msg, body = "") => {
     return true;
   }
 
-  // Important:
-  // Unknown text should NOT be ignored.
-  // Let buffer + AI decide later.
   return false;
 };
+
 const handleIncomingWhatsappMessage = async (msg) => {
   const from = msg.from;
   const body = msg.body?.trim();
@@ -264,49 +181,10 @@ const handleIncomingWhatsappMessage = async (msg) => {
     type: "incoming",
   });
 
-  const pendingChecks = await findMaterialChecksForReply({
-    from,
-    body,
-    msg,
-  });
-
-  if (pendingChecks.length > 0) {
-    await handleShedReply(pendingChecks, body, from);
-    return;
-  }
-
-  const classification = await classifyIncomingWhatsappMessage(body);
-
-  console.log("MESSAGE CLASSIFICATION =>", classification);
-
-  if (
-    classification.intent === "availability_reply" &&
-    classification.confidence >= 0.65
-  ) {
-    await safeSendWhatsappMessage(
-      process.env.CEO_WHATSAPP,
-      `⚠️ *E2D - Unmatched Stock Reply*
-
-A WhatsApp message looks like a stock availability reply, but no enquiry/check could be matched.
-
-*From:* ${from}
-
-*Message:*
-${body}
-
-Please review manually from E2D dashboard.`
-    );
-
-    await WhatsappMessage.create({
-      messageId: msg.id?._serialized,
-      from,
-      body,
-      type: "incoming",
-      mediaType: "unmatched_availability_reply",
-    });
-
-    return;
-  }
+  // IMPORTANT:
+  // E2D does NOT update material availability from WhatsApp replies now.
+  // WhatsApp is only for enquiry intake.
+  // Shed stock update must happen from E2D frontend app.
 
   await addMessageToBuffer({
     from,
@@ -408,12 +286,12 @@ const createEnquiryFromWhatsapp = async (body, from, whatsappMessageId) => {
       }));
 
       await enquiry.save();
-
       return enquiry;
     }
 
     enquiry.customerName = extracted.customerName || "";
-    enquiry.aiStatus = "success";
+    enquiry.aiStatus =
+      extracted.extractionSource === "regex" ? "success" : "success";
     enquiry.aiConfidence = extracted.confidence || 0;
     enquiry.enquiryHash = duplicateCheck.enquiryHash;
 
@@ -445,20 +323,24 @@ const createEnquiryFromWhatsapp = async (body, from, whatsappMessageId) => {
 
     return enquiry;
   } catch (error) {
+    console.error("Material extraction failed:", error.message);
+
     enquiry.aiStatus = "failed";
-    enquiry.status = "escalated";
+    enquiry.status = "manual_review";
     await enquiry.save();
 
     await safeSendWhatsappMessage(
       process.env.CEO_WHATSAPP,
-      `🚨 *E2D - AI Extraction Failed*
+      `⚠️ *E2D - Manual Review Required*
 
 *Enquiry:* ${enquiry.enquiryNo}
 
-Raw Message:
-${body}
+Raw enquiry was saved, but material extraction did not happen automatically.
 
-Please check manually from E2D dashboard.`
+Please review from E2D dashboard.
+
+Raw Message:
+${body}`
     );
 
     return enquiry;
@@ -477,18 +359,23 @@ const createGroupedMaterialChecksAndSend = async (
     const shed = await assignShedByCategory(material.category || "Other");
 
     if (!shed) {
-      enquiry.status = "escalated";
+      enquiry.status = "manual_review";
       await enquiry.save();
 
       await safeSendWhatsappMessage(
         process.env.CEO_WHATSAPP,
-        `🚨 *E2D - No Shed Mapping Found*
+        `⚠️ *E2D - Shed Mapping Required*
 
 *Enquiry:* ${enquiry.enquiryNo}
 
+No shed mapping found for:
+
 *Grade:* ${material.grade || "-"}
+*Category:* ${material.category || "-"}
 *Size:* ${material.size || "-"}
 *Qty:* ${material.quantity || "-"} ${material.unit || "Nos"}
+
+Please assign/check from E2D dashboard.
 
 Raw Message:
 ${rawMessage}`
@@ -509,9 +396,20 @@ ${rawMessage}`
       requiredQuantity: material.quantity || 0,
       unit: material.unit || "Nos",
       status: "pending",
+      requested: {
+        grade: material.grade || "",
+        materialType: material.type || "Other",
+        category: material.category || "Other",
+        size: material.size || "",
+        quantity: material.quantity || 0,
+        unit: material.unit || "Nos",
+      },
       availability: {
         status: "pending",
+        availableQuantity: 0,
+        unit: material.unit || "Nos",
       },
+      updateSource: "system",
     });
 
     enquiry.materialCheckIds.push(materialCheck._id);
@@ -555,7 +453,7 @@ ${rawMessage}`
         }
       );
 
-      enquiry.status = "escalated";
+      enquiry.status = "manual_review";
       await enquiry.save();
     } else {
       await MaterialCheck.updateMany(
@@ -581,161 +479,60 @@ const buildShedMaterialMessage = ({ enquiry, checks }) => {
 
   return `🏭 *E2D - Material Check Required*
 
-You have *${checks.length}* material item(s) to check.
+You have *${checks.length}* material item(s).
 
 *Enquiry:* ${enquiry.enquiryNo}
 *Customer:* ${enquiry.customerName || "-"}
 
 ${lines}
 
-Please check stock and reply to this same WhatsApp message.
+Please check stock physically and update availability from E2D Dashboard.
 
-Also write this enquiry number in your reply:
-*${enquiry.enquiryNo}*
+⚠️ WhatsApp stock replies are disabled.`;
+};
 
-You can reply in Hindi or English.`;
+/*
+==================================================
+FUTURE WHATSAPP STOCK REPLY ENGINE - DISABLED
+==================================================
+
+const ACTIVE_CHECK_STATUSES = [
+  "pending",
+  "unclear",
+  "available",
+  "near_available",
+  "partial_available",
+  "not_available",
+];
+
+const extractEnquiryNoFromText = (text = "") => {
+  const match = text.match(/E2D-ENQ-\d+/i);
+  return match ? match[0].toUpperCase() : null;
+};
+
+const getQuotedMessageId = (msg) => {
+  return (
+    msg?._data?.quotedStanzaID ||
+    msg?._data?.quotedMsg?.id?.id ||
+    msg?._data?.quotedMessageId ||
+    null
+  );
+};
+
+const findMaterialChecksForReply = async ({ from, body, msg }) => {
+  // Disabled. Use frontend update form instead.
 };
 
 const handleShedReply = async (pendingChecks, body, from) => {
-  const enquiry = pendingChecks[0]?.enquiryId;
-
-  try {
-    const aiResult = await extractShedAvailabilityFromReply({
-      replyText: body,
-      materialChecks: pendingChecks,
-    });
-
-    for (const response of aiResult.responses) {
-      const check =
-        pendingChecks.find(
-          (c) => String(c._id) === String(response.checkId)
-        ) || pendingChecks[Number(response.lineNo) - 1];
-
-      if (!check) continue;
-
-      check.status =
-        response.status === "exact_available"
-          ? "available"
-          : response.status === "not_available"
-          ? "not_available"
-          : response.status;
-
-      check.availability = {
-        status: response.status || "unclear",
-        availableSize: response.availableSize || "",
-        availableQuantity: response.availableQuantity || 0,
-        unit: response.unit || "Nos",
-        remark: response.remark || "",
-        rawReply: body,
-        repliedAt: new Date(),
-      };
-
-      check.responseHistory.push({
-        response: response.status || "unclear",
-        responseBy: from,
-        responseAt: new Date(),
-        message: body,
-      });
-
-      await check.save();
-    }
-
-    await updateEnquiryStatusFromChecks(enquiry?._id);
-
-    await safeSendWhatsappMessage(
-      from,
-      `✅ *E2D - Reply Saved*
-
-*Enquiry:* ${enquiry?.enquiryNo || "-"}
-
-Your stock reply has been updated in E2D dashboard.`
-    );
-  }  catch (error) {
-    console.error("Shed reply AI failed:", error.message);
-
-    for (const check of pendingChecks) {
-      check.status = "unclear";
-      check.availability = {
-        status: "unclear",
-        rawReply: body,
-        remark: "AI could not understand shed reply. Manual review required.",
-        repliedAt: new Date(),
-      };
-
-      check.responseHistory.push({
-        response: "unclear",
-        responseBy: from,
-        responseAt: new Date(),
-        message: body,
-      });
-
-      await check.save();
-    }
-
-    await updateEnquiryStatusFromChecks(enquiry?._id);
-
-    await safeSendWhatsappMessage(
-      from,
-      `⚠️ *E2D - Reply Not Clear*
-
-*Enquiry:* ${enquiry?.enquiryNo || "-"}
-
-We could not understand your stock reply.
-
-Please send simply:
-
-*EN24 75 = 3 pcs*
-*EN31 90 = nahi*
-*EN31 85 = 2 pcs*
-
-You can also send a voice note or photo.`
-    );
-
-    await safeSendWhatsappMessage(
-      process.env.CEO_WHATSAPP,
-      `⚠️ *E2D - Shed Reply Needs Review*
-
-*Enquiry:* ${enquiry?.enquiryNo || "-"}
-
-Shed reply was not understood.
-
-*From:* ${from}
-
-*Reply:*
-${body}
-
-Please review manually from E2D dashboard.`
-    );
-}
+  // Disabled. Use frontend update form instead.
 };
 
 const updateEnquiryStatusFromChecks = async (enquiryId) => {
-  if (!enquiryId) return;
-
-  const checks = await MaterialCheck.find({ enquiryId });
-
-  if (!checks.length) return;
-
-  const statuses = checks.map((c) => c.availability?.status || c.status);
-
-  let enquiryStatus = "pending_material_check";
-
-  if (statuses.every((s) => s === "exact_available")) {
-    enquiryStatus = "available";
-  } else if (statuses.every((s) => s === "not_available")) {
-    enquiryStatus = "not_available";
-  } else if (
-    statuses.some((s) =>
-      ["exact_available", "near_available", "partial_available"].includes(s)
-    )
-  ) {
-    enquiryStatus = "partial_available";
-  }
-
-  await Enquiry.findByIdAndUpdate(enquiryId, {
-    status: enquiryStatus,
-  });
+  // Disabled here. Enquiry status is now updated from materialCheckUpdateService.
 };
+
+==================================================
+*/
 
 module.exports = {
   initWhatsapp,

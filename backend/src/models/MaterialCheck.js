@@ -19,26 +19,97 @@ const materialCheckSchema = new mongoose.Schema(
     type: String,
     category: String,
     size: String,
-    requiredQuantity: Number,
-    unit: String,
+
+    requiredQuantity: {
+      type: Number,
+      default: 0,
+    },
+
+    unit: {
+      type: String,
+      default: "Nos",
+    },
 
     status: {
-  type: String,
-  enum: [
-    "pending",
-    "available",
-    "exact_available",
-    "near_available",
-    "partial_available",
-    "not_available",
-    "waiting_partial_quantity",
-    "unclear",
-    "escalated",
-  ],
-  default: "pending",
-},
+      type: String,
+      enum: [
+        "pending",
+        "available",
+        "exact_available",
+        "near_available",
+        "partial_available",
+        "not_available",
+        "unclear",
+        "escalated",
+      ],
+      default: "pending",
+    },
 
-    availableQuantity: Number,
+    requested: {
+      grade: String,
+      materialType: String,
+      category: String,
+      size: String,
+      quantity: Number,
+      unit: String,
+    },
+
+    availability: {
+      status: {
+        type: String,
+        enum: [
+          "pending",
+          "exact_available",
+          "near_available",
+          "partial_available",
+          "not_available",
+          "unclear",
+        ],
+        default: "pending",
+      },
+
+      availableSize: String,
+
+      availableQuantity: {
+        type: Number,
+        default: 0,
+      },
+
+      unit: {
+        type: String,
+        default: "Nos",
+      },
+
+      remark: String,
+
+      rawReply: String,
+
+      updatedAt: Date,
+    },
+
+    updateSource: {
+      type: String,
+      enum: [
+        "system",
+        "whatsapp",
+        "frontend",
+      ],
+      default: "system",
+    },
+
+    audioAttachment: {
+      fileName: String,
+      filePath: String,
+      originalName: String,
+    },
+
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+
+    updatedByName: String,
+    updatedByRole: String,
 
     responseHistory: [
       {
@@ -51,41 +122,19 @@ const materialCheckSchema = new mongoose.Schema(
 
     reminder1SentAt: Date,
     reminder2SentAt: Date,
+
     escalatedAt: Date,
 
     lastWhatsappMessageId: String,
+
     lineNo: Number,
-
-requested: {
-  grade: String,
-  materialType: String,
-  category: String,
-  size: String,
-  quantity: Number,
-  unit: String,
-},
-
-availability: {
-  status: {
-    type: String,
-    enum: [
-      "pending",
-      "exact_available",
-      "near_available",
-      "partial_available",
-      "not_available",
-      "unclear",
-    ],
-    default: "pending",
   },
-
-  availableSize: String,
-  availableQuantity: Number,
-  remark: String,
-  rawReply: String,
-},
-  },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-module.exports = mongoose.model("MaterialCheck", materialCheckSchema);
+module.exports = mongoose.model(
+  "MaterialCheck",
+  materialCheckSchema
+);

@@ -15,7 +15,6 @@ const materialLineSchema = new mongoose.Schema(
     shape: {
       type: String,
       enum: ["round", "flat", "square", "rcs"],
-      required: true,
     },
 
     category: {
@@ -94,7 +93,11 @@ const enquirySchema = new mongoose.Schema(
       enum: ["pending", "success", "failed"],
       default: "pending",
     },
-
+     extractionSource: {
+  type: String,
+  enum: ["ai", "regex", "manual"],
+  default: "ai",
+},
     aiConfidence: {
       type: Number,
       default: 0,
@@ -136,6 +139,7 @@ const enquirySchema = new mongoose.Schema(
       enum: [
         "pending_material_check",
         "available",
+        "manual_review",
         "partial_available",
         "not_available",
         "escalated",
@@ -161,7 +165,7 @@ const enquirySchema = new mongoose.Schema(
     },
 
     duplicateReason: String,
-
+    duplicateDetectedAt: Date,
     createdByWhatsappNumber: String,
   },
   { timestamps: true }
