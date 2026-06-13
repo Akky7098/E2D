@@ -1,0 +1,5 @@
+# WhatsApp session/cache
+backend/whatsapp-sessions/
+whatsapp-sessions/
+.wwebjs_auth/
+.wwebjs_cache/
