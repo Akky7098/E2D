@@ -56,11 +56,11 @@ const startApp = async () => {
         console.log("WhatsApp health cron failed to start:", error.message);
       }
 
-      try {
-        startMaterialEscalationCron();
-      } catch (error) {
-        console.log("Material escalation cron failed to start:", error.message);
-      }
+      // try {
+      //   startMaterialEscalationCron();
+      // } catch (error) {
+      //   console.log("Material escalation cron failed to start:", error.message);
+      // }
     } else {
       console.log("Background jobs disabled.");
       console.log("Set ENABLE_BACKGROUND_JOBS=true on Hostinger only.");
