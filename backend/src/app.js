@@ -7,6 +7,7 @@ const enquiryRoutes = require("./routes/enquiryRoutes");
 const materialCheckRoutes = require("./routes/materialCheckRoutes");
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
+const whatsappRoutes = require("./routes/whatsappRoutes");
 const path = require("path");
 
 
@@ -25,6 +26,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/enquiries", enquiryRoutes);
 app.use("/api/material-checks", materialCheckRoutes);
+app.use("/api/whatsapp", whatsappRoutes);
 
 app.get("/", (req, res) => {
   res.send("E2D Backend Running");

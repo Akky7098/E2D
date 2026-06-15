@@ -1,5 +1,7 @@
 const { Client, LocalAuth } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
+const path = require("path");
+const fs = require("fs");
 
 const Enquiry = require("../models/Enquiry");
 const MaterialCheck = require("../models/MaterialCheck");
@@ -10,27 +12,177 @@ const { extractMaterialFromText } = require("./aiExtractionService");
 const { assignShedByCategory } = require("./materialAssignmentService");
 const { findDuplicateEnquiry } = require("./duplicateEnquiryService");
 
-let client;
+let client = null;
+let isReady = false;
+let isInitializing = false;
+let latestQr = null;
+let lastState = "NOT_INITIALIZED";
+let lastError = null;
+
+const authClientId = "e2d-material-availability";
+
+const whatsappSessionPath =
+  process.env.WHATSAPP_SESSION_PATH ||
+  path.join(process.env.HOME || process.cwd(), "whatsapp-session-e2d");
+
+const whatsappCachePath = path.join(whatsappSessionPath, "wwebjs-cache");
+
+const ensureSessionFolder = () => {
+  try {
+    fs.mkdirSync(whatsappSessionPath, { recursive: true });
+    fs.mkdirSync(whatsappCachePath, { recursive: true });
+
+    const testFile = path.join(whatsappSessionPath, "_session_write_test.txt");
+    fs.writeFileSync(testFile, "ok");
+
+    console.log("WHATSAPP SESSION PATH =>", whatsappSessionPath);
+    console.log(
+      "WHATSAPP LOCAL AUTH PATH =>",
+      path.join(whatsappSessionPath, `session-${authClientId}`)
+    );
+    console.log("WHATSAPP CACHE PATH =>", whatsappCachePath);
+    console.log("WHATSAPP SESSION WRITE OK =>", fs.existsSync(testFile));
+  } catch (error) {
+    console.log("WHATSAPP SESSION FOLDER ERROR =>", error.message);
+  }
+};
+
+const mapTypeToShape = (type = "", size = "") => {
+  const text = `${type} ${size}`.toLowerCase();
+
+  if (text.includes("round") || text.includes("dia") || text.includes("diameter")) {
+    return "round";
+  }
+
+  if (text.includes("flat") || text.includes("plate")) {
+    return "flat";
+  }
+
+  if (text.includes("square")) {
+    return "square";
+  }
+
+  if (text.includes("rcs")) {
+    return "rcs";
+  }
+
+  return "flat";
+};
+
+const mapCategoryToEnquiryCategory = (category = "") => {
+  const text = String(category || "").toLowerCase();
+
+  if (text.includes("tool")) return "tool_and_die_steel";
+  if (text.includes("plastic")) return "plastic_mould_steel";
+  if (text.includes("hss") || text.includes("high speed")) return "high_speed_steel";
+  if (text.includes("alloy")) return "alloy_steel";
+  if (text.includes("carbon") || text.includes("mild")) return "carbon_steel";
+
+  return "other";
+};
 
 const initWhatsapp = async () => {
+  if (client) return client;
+
+  if (isInitializing) {
+    console.log("WhatsApp already initializing...");
+    return client;
+  }
+
+  ensureSessionFolder();
+
+  isInitializing = true;
+  lastError = null;
+  lastState = "INITIALIZING";
+
   client = new Client({
     authStrategy: new LocalAuth({
-      clientId: "e2d-material-availability",
-      dataPath: "./whatsapp-sessions",
+      clientId: authClientId,
+      dataPath: whatsappSessionPath,
     }),
+
+    webVersionCache: {
+      type: "local",
+      path: whatsappCachePath,
+    },
+
     puppeteer: {
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--disable-background-timer-throttling",
+        "--disable-renderer-backgrounding",
+        "--disable-features=TranslateUI",
+        "--disable-ipc-flooding-protection",
+        "--no-first-run",
+        "--no-zygote",
+      ],
     },
   });
 
   client.on("qr", (qr) => {
+    isReady = false;
+    isInitializing = false;
+    latestQr = qr;
+    lastState = "QR_REQUIRED";
+
     console.log("Scan WhatsApp QR:");
     qrcode.generate(qr, { small: true });
   });
 
+  client.on("authenticated", () => {
+    console.log("WhatsApp authenticated");
+    console.log("WhatsApp session saved at:", whatsappSessionPath);
+    lastState = "AUTHENTICATED";
+  });
+
   client.on("ready", () => {
+    isReady = true;
+    isInitializing = false;
+    latestQr = null;
+    lastState = "CONNECTED";
+    lastError = null;
+
     console.log("WhatsApp ready");
+  });
+
+  client.on("auth_failure", (msg) => {
+    isReady = false;
+    isInitializing = false;
+    latestQr = null;
+    lastState = "AUTH_FAILURE";
+    lastError = msg;
+
+    console.log("WhatsApp auth failed:", msg);
+  });
+
+  client.on("disconnected", async (reason) => {
+    isReady = false;
+    isInitializing = false;
+    latestQr = null;
+    lastState = "DISCONNECTED";
+    lastError = reason;
+
+    console.log("WhatsApp disconnected:", reason);
+
+    try {
+      if (client) await client.destroy().catch(() => {});
+    } catch (error) {
+      console.log("WhatsApp destroy error:", error.message);
+    }
+
+    client = null;
+
+    setTimeout(() => {
+      initWhatsapp().catch((error) => {
+        console.log("WhatsApp auto restart failed:", error.message);
+      });
+    }, 8000);
   });
 
   client.on("message", async (msg) => {
@@ -51,11 +203,120 @@ const initWhatsapp = async () => {
     }
   });
 
-  await client.initialize();
+  client.initialize().catch((error) => {
+    isReady = false;
+    isInitializing = false;
+    latestQr = null;
+    lastState = "INIT_FAILED";
+    lastError = error.message;
+
+    console.log("WhatsApp initialize error:", error.message);
+
+    client = null;
+  });
+
+  return client;
+};
+
+const getWhatsappClient = () => {
+  if (!client && !isInitializing) {
+    initWhatsapp().catch((error) => {
+      console.log("WhatsApp init error:", error.message);
+    });
+  }
+
+  return client;
+};
+
+const forceCheckWhatsappStatus = async () => {
+  try {
+    if (!client) {
+      if (!isInitializing) await initWhatsapp();
+
+      return {
+        ready: false,
+        state: lastState || "INITIALIZING",
+        qr: latestQr,
+        error: lastError,
+        sessionPath: whatsappSessionPath,
+      };
+    }
+
+    const state = await client.getState().catch(() => null);
+
+    if (state === "CONNECTED") {
+      isReady = true;
+      lastState = "CONNECTED";
+
+      return {
+        ready: true,
+        state,
+        qr: null,
+        error: null,
+        sessionPath: whatsappSessionPath,
+      };
+    }
+
+    isReady = false;
+    lastState = state || lastState || "NOT_CONNECTED";
+
+    return {
+      ready: false,
+      state: lastState,
+      qr: latestQr,
+      error: lastError,
+      sessionPath: whatsappSessionPath,
+    };
+  } catch (error) {
+    isReady = false;
+    lastState = "DISCONNECTED";
+    lastError = error.message;
+
+    return {
+      ready: false,
+      state: "DISCONNECTED",
+      qr: latestQr,
+      error: error.message,
+      sessionPath: whatsappSessionPath,
+    };
+  }
+};
+
+const restartWhatsappClient = async () => {
+  try {
+    if (client) await client.destroy().catch(() => {});
+  } catch (error) {
+    console.log("WhatsApp destroy error:", error.message);
+  }
+
+  client = null;
+  isReady = false;
+  isInitializing = false;
+  latestQr = null;
+  lastState = "RESTARTING";
+  lastError = null;
+
+  return initWhatsapp();
+};
+
+const destroyWhatsappClient = async () => {
+  try {
+    if (client) await client.destroy();
+  } catch (error) {
+    console.log("WhatsApp destroy error:", error.message);
+  }
+
+  client = null;
+  isReady = false;
+  isInitializing = false;
+  latestQr = null;
+  lastState = "DESTROYED";
 };
 
 const sendWhatsappMessage = async (to, message) => {
-  if (!client) throw new Error("WhatsApp client not initialized");
+  if (!client || !isReady) {
+    throw new Error("WhatsApp client not ready");
+  }
 
   const sent = await client.sendMessage(to, message);
 
@@ -76,6 +337,16 @@ const safeSendWhatsappMessage = async (to, message) => {
       return null;
     }
 
+    const status = await forceCheckWhatsappStatus();
+
+    if (!status.ready) {
+      console.log("WhatsApp not ready. Message skipped:", {
+        to,
+        state: status.state,
+      });
+      return null;
+    }
+
     return await sendWhatsappMessage(to, message);
   } catch (error) {
     console.error("WhatsApp send failed:", {
@@ -93,8 +364,6 @@ const shouldIgnoreWhatsappMessage = (msg, body = "") => {
   if (msg.fromMe) return true;
   if (from === "status@broadcast") return true;
   if (from.endsWith("@newsletter")) return true;
-
-  // Ignore groups for MVP
   if (from.endsWith("@g.us")) return true;
 
   const text = String(body || "").trim();
@@ -161,11 +430,7 @@ const shouldIgnoreWhatsappMessage = (msg, body = "") => {
 
   if (emojiOnly) return true;
 
-  if (greetingPatterns.some((pattern) => pattern.test(text))) {
-    return true;
-  }
-
-  return false;
+  return greetingPatterns.some((pattern) => pattern.test(text));
 };
 
 const handleIncomingWhatsappMessage = async (msg) => {
@@ -180,11 +445,6 @@ const handleIncomingWhatsappMessage = async (msg) => {
     body,
     type: "incoming",
   });
-
-  // IMPORTANT:
-  // E2D does NOT update material availability from WhatsApp replies now.
-  // WhatsApp is only for enquiry intake.
-  // Shed stock update must happen from E2D frontend app.
 
   await addMessageToBuffer({
     from,
@@ -244,12 +504,13 @@ const createEnquiryFromWhatsapp = async (body, from, whatsappMessageId) => {
     createdByWhatsappNumber: from,
     status: "pending_material_check",
     aiStatus: "pending",
+    extractionSource: "ai",
     materials: [],
     materialCheckIds: [],
     extractedMaterial: {
       grade: "",
-      materialType: "",
-      category: "Other",
+      shape: "flat",
+      category: "other",
       size: "",
       quantity: 0,
       unit: "Nos",
@@ -259,62 +520,50 @@ const createEnquiryFromWhatsapp = async (body, from, whatsappMessageId) => {
   try {
     const extracted = await extractMaterialFromText(body);
 
+    if (!extracted.materials || extracted.materials.length === 0) {
+      enquiry.aiStatus = "failed";
+      enquiry.extractionSource = extracted.extractionSource || "manual";
+      enquiry.status = "manual_review";
+      await enquiry.save();
+      return enquiry;
+    }
+
     const duplicateCheck = await findDuplicateEnquiry({
       materials: extracted.materials,
       customerName: extracted.customerName,
       customerPhone: from,
     });
 
+    const enquiryMaterials = extracted.materials.map((m) => ({
+      grade: m.grade,
+      otherGrade: "",
+      shape: mapTypeToShape(m.type || m.materialType, m.size),
+      category: mapCategoryToEnquiryCategory(m.category),
+      size: m.size,
+      quantity: m.quantity,
+      unit: m.unit || "Nos",
+      manualShedIds: [],
+    }));
+
+    enquiry.customerName = extracted.customerName || "";
+    enquiry.aiStatus = "success";
+    enquiry.extractionSource = extracted.extractionSource || "ai";
+    enquiry.aiConfidence = extracted.confidence || 0;
+    enquiry.enquiryHash = duplicateCheck.enquiryHash;
+    enquiry.materials = enquiryMaterials;
+
+    const firstMaterial = enquiryMaterials[0];
+    if (firstMaterial) enquiry.extractedMaterial = firstMaterial;
+
     if (duplicateCheck.isDuplicate) {
-      enquiry.customerName = extracted.customerName || "";
-      enquiry.aiStatus = "success";
-      enquiry.aiConfidence = extracted.confidence || 0;
-      enquiry.enquiryHash = duplicateCheck.enquiryHash;
       enquiry.isDuplicate = true;
       enquiry.duplicateOf = duplicateCheck.duplicate._id;
-      enquiry.duplicateReason =
-        "Same material enquiry found within last 10 days";
+      enquiry.duplicateReason = "Same material enquiry found within last 10 days";
+      enquiry.duplicateDetectedAt = new Date();
       enquiry.status = "closed";
-
-      enquiry.materials = extracted.materials.map((m) => ({
-        grade: m.grade,
-        materialType: m.type,
-        category: m.category,
-        size: m.size,
-        quantity: m.quantity,
-        unit: m.unit,
-      }));
 
       await enquiry.save();
       return enquiry;
-    }
-
-    enquiry.customerName = extracted.customerName || "";
-    enquiry.aiStatus =
-      extracted.extractionSource === "regex" ? "success" : "success";
-    enquiry.aiConfidence = extracted.confidence || 0;
-    enquiry.enquiryHash = duplicateCheck.enquiryHash;
-
-    enquiry.materials = extracted.materials.map((m) => ({
-      grade: m.grade,
-      materialType: m.type,
-      category: m.category,
-      size: m.size,
-      quantity: m.quantity,
-      unit: m.unit,
-    }));
-
-    const firstMaterial = extracted.materials[0];
-
-    if (firstMaterial) {
-      enquiry.extractedMaterial = {
-        grade: firstMaterial.grade,
-        materialType: firstMaterial.type,
-        category: firstMaterial.category,
-        size: firstMaterial.size,
-        quantity: firstMaterial.quantity,
-        unit: firstMaterial.unit,
-      };
     }
 
     await enquiry.save();
@@ -326,6 +575,7 @@ const createEnquiryFromWhatsapp = async (body, from, whatsappMessageId) => {
     console.error("Material extraction failed:", error.message);
 
     enquiry.aiStatus = "failed";
+    enquiry.extractionSource = "manual";
     enquiry.status = "manual_review";
     await enquiry.save();
 
@@ -347,11 +597,7 @@ ${body}`
   }
 };
 
-const createGroupedMaterialChecksAndSend = async (
-  enquiry,
-  materials,
-  rawMessage
-) => {
+const createGroupedMaterialChecksAndSend = async (enquiry, materials, rawMessage) => {
   const groupedByShed = {};
 
   for (let i = 0; i < materials.length; i++) {
@@ -390,7 +636,7 @@ ${rawMessage}`
       assignedShed: shed._id,
       assignedWhatsappNumber: shed.whatsappNumber,
       grade: material.grade || "",
-      type: material.type || "Other",
+      type: material.type || material.materialType || "Other",
       category: material.category || "Other",
       size: material.size || "",
       requiredQuantity: material.quantity || 0,
@@ -398,7 +644,7 @@ ${rawMessage}`
       status: "pending",
       requested: {
         grade: material.grade || "",
-        materialType: material.type || "Other",
+        materialType: material.type || material.materialType || "Other",
         category: material.category || "Other",
         size: material.size || "",
         quantity: material.quantity || 0,
@@ -414,17 +660,10 @@ ${rawMessage}`
 
     enquiry.materialCheckIds.push(materialCheck._id);
 
-    if (!enquiry.materialCheckId) {
-      enquiry.materialCheckId = materialCheck._id;
-    }
-
     const key = shed.whatsappNumber;
 
     if (!groupedByShed[key]) {
-      groupedByShed[key] = {
-        shed,
-        checks: [],
-      };
+      groupedByShed[key] = { shed, checks: [] };
     }
 
     groupedByShed[key].checks.push(materialCheck);
@@ -435,34 +674,23 @@ ${rawMessage}`
   for (const key of Object.keys(groupedByShed)) {
     const { shed, checks } = groupedByShed[key];
 
-    const message = buildShedMaterialMessage({
-      enquiry,
-      checks,
-    });
-
-    const sent = await safeSendWhatsappMessage(shed.whatsappNumber, message);
+    const sent = await safeSendWhatsappMessage(
+      shed.whatsappNumber,
+      buildShedMaterialMessage({ enquiry, checks })
+    );
 
     if (!sent) {
       await MaterialCheck.updateMany(
-        {
-          _id: { $in: checks.map((c) => c._id) },
-        },
-        {
-          status: "escalated",
-          escalatedAt: new Date(),
-        }
+        { _id: { $in: checks.map((c) => c._id) } },
+        { status: "escalated", escalatedAt: new Date() }
       );
 
       enquiry.status = "manual_review";
       await enquiry.save();
     } else {
       await MaterialCheck.updateMany(
-        {
-          _id: { $in: checks.map((c) => c._id) },
-        },
-        {
-          lastWhatsappMessageId: sent.id?._serialized,
-        }
+        { _id: { $in: checks.map((c) => c._id) } },
+        { lastWhatsappMessageId: sent.id?._serialized }
       );
     }
   }
@@ -491,51 +719,13 @@ Please check stock physically and update availability from E2D Dashboard.
 ⚠️ WhatsApp stock replies are disabled.`;
 };
 
-/*
-==================================================
-FUTURE WHATSAPP STOCK REPLY ENGINE - DISABLED
-==================================================
-
-const ACTIVE_CHECK_STATUSES = [
-  "pending",
-  "unclear",
-  "available",
-  "near_available",
-  "partial_available",
-  "not_available",
-];
-
-const extractEnquiryNoFromText = (text = "") => {
-  const match = text.match(/E2D-ENQ-\d+/i);
-  return match ? match[0].toUpperCase() : null;
-};
-
-const getQuotedMessageId = (msg) => {
-  return (
-    msg?._data?.quotedStanzaID ||
-    msg?._data?.quotedMsg?.id?.id ||
-    msg?._data?.quotedMessageId ||
-    null
-  );
-};
-
-const findMaterialChecksForReply = async ({ from, body, msg }) => {
-  // Disabled. Use frontend update form instead.
-};
-
-const handleShedReply = async (pendingChecks, body, from) => {
-  // Disabled. Use frontend update form instead.
-};
-
-const updateEnquiryStatusFromChecks = async (enquiryId) => {
-  // Disabled here. Enquiry status is now updated from materialCheckUpdateService.
-};
-
-==================================================
-*/
-
 module.exports = {
   initWhatsapp,
+  initWhatsappClient: initWhatsapp,
+  getWhatsappClient,
+  forceCheckWhatsappStatus,
+  restartWhatsappClient,
+  destroyWhatsappClient,
   sendWhatsappMessage,
   safeSendWhatsappMessage,
   createEnquiryFromWhatsapp,

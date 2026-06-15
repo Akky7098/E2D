@@ -1,12 +1,47 @@
-// AI kept commented for future paid/stable version
-// const { GoogleGenAI } = require("@google/genai");
-// const ai = new GoogleGenAI({
-//   apiKey: process.env.GEMINI_API_KEY,
-// });
+const { GoogleGenAI } = require("@google/genai");
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+});
 
 const {
   normalizeMaterialsWithGradeMaster,
 } = require("./gradeMasterService");
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const safeJsonParse = (text) => {
+  try {
+    const cleaned = String(text || "")
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+
+    if (firstBrace === -1 || lastBrace === -1) return null;
+
+    return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+  } catch (error) {
+    console.error("AI JSON parse failed:", text);
+    return null;
+  }
+};
+
+const callGeminiWithTimeout = async (prompt, timeoutMs = 25000) => {
+  return Promise.race([
+    ai.models.generateContent({
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      contents: prompt,
+    }),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Gemini timeout")), timeoutMs)
+    ),
+  ]);
+};
+
+const getAIText = (response) => response?.text || "";
 
 const normalizeSize = (value = "") => {
   return String(value || "")
@@ -272,16 +307,103 @@ const regexExtractMaterials = async (message = "") => {
   };
 };
 
+const extractMaterialFromAI = async (message = "") => {
+  const prompt = `
+You are an expert steel enquiry extraction assistant for Bharat Special Steels style business.
+
+Return ONLY valid JSON. No markdown. No explanation.
+
+JSON schema:
+{
+  "customerName": "",
+  "materials": [
+    {
+      "grade": "",
+      "type": "",
+      "category": "Other",
+      "size": "",
+      "quantity": 0,
+      "unit": "Nos",
+      "originalLine": "",
+      "confidence": 0
+    }
+  ],
+  "notes": "",
+  "confidence": 0
+}
+
+Rules:
+1. Extract ALL material requirements.
+2. Never return only first grade.
+3. One grade + one size + one quantity = one object.
+4. If same grade has multiple sizes, return separate objects.
+5. If quantity missing, quantity = 0.
+6. pc, pcs, nos, no, nag, piece, pieces = unit Nos.
+7. dia, diameter, ø, round, gol = type Round Bar.
+8. 200x200x500 / 250 x 250 x 700 / 300*200*600 = type Block.
+9. flat, patti, 200x50, 75x25 = type Flat Bar.
+10. plate = type Plate.
+11. square or 200x200 without length = Square Bar unless block is clearly written.
+12. Do not invent missing grade or customer name.
+13. Ignore greetings like sir, bhai, please, thanks.
+14. Extract customer name if Customer, Party, Company is mentioned or last line looks like company name.
+15. If grade is 1.2379, 1.2344, 1.2311, 4140, 4340, extract exactly.
+
+Message:
+${message}
+`;
+
+  let lastError;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await callGeminiWithTimeout(prompt, 25000);
+      const parsed = safeJsonParse(getAIText(response));
+
+      if (!parsed || !Array.isArray(parsed.materials)) {
+        throw new Error("Invalid Gemini JSON");
+      }
+
+      let materials = parsed.materials
+        .map(normalizeMaterial)
+        .filter((m) => m.grade || m.size || m.quantity);
+
+      materials = await normalizeMaterialsWithGradeMaster(materials);
+
+      if (!materials.length) {
+        throw new Error("Gemini returned empty materials");
+      }
+
+      const customerName = String(parsed.customerName || "").trim();
+
+      return {
+        customerName,
+        materials,
+        notes: String(parsed.notes || "").trim(),
+        confidence: Number(parsed.confidence) || 0.85,
+        enquiryHash: buildEnquiryHash(materials, customerName),
+        extractionSource: "ai",
+      };
+    } catch (error) {
+      lastError = error;
+      console.error(`Gemini material attempt ${attempt} failed:`, error.message);
+      if (attempt < 3) await sleep(2000 * attempt);
+    }
+  }
+
+  throw lastError;
+};
+
 const extractMaterialFromText = async (message) => {
-  // AI disabled for now. Keep this section for future paid/stable AI.
-  /*
   try {
     const aiResult = await extractMaterialFromAI(message);
-    if (aiResult.materials?.length) return aiResult;
+
+    if (aiResult.materials?.length) {
+      return aiResult;
+    }
   } catch (error) {
-    console.error("AI failed, using regex:", error.message);
+    console.error("Gemini failed, using regex fallback:", error.message);
   }
-  */
 
   const regexResult = await regexExtractMaterials(message);
 
@@ -382,16 +504,108 @@ const extractShedAvailabilityByRegex = ({ replyText, materialChecks }) => {
   };
 };
 
+const extractShedAvailabilityFromAI = async ({ replyText, materialChecks }) => {
+  const itemsText = materialChecks
+    .map((c, index) => {
+      return `${index + 1}. checkId=${c._id}
+Grade: ${c.grade}
+Type: ${c.type}
+Requested Size: ${c.size}
+Requested Qty: ${c.requiredQuantity} ${c.unit || "Nos"}`;
+    })
+    .join("\n\n");
+
+  const prompt = `
+You are extracting steel shed/store availability reply.
+
+Return ONLY valid JSON. No markdown.
+
+JSON schema:
+{
+  "responses": [
+    {
+      "lineNo": 1,
+      "checkId": "",
+      "status": "",
+      "availableSize": "",
+      "availableQuantity": 0,
+      "unit": "Nos",
+      "remark": "",
+      "confidence": 0
+    }
+  ],
+  "overallConfidence": 0
+}
+
+Allowed status:
+- exact_available
+- near_available
+- partial_available
+- not_available
+- unclear
+
+Rules:
+1. Match reply to requested items using line number, grade, size, context.
+2. Exact size and full quantity available = exact_available.
+3. Alternate close size = near_available.
+4. Same size but lower quantity = partial_available.
+5. nahi, stock nahi, not available = not_available.
+6. hai, pada hai, available, mil jayega = available.
+7. Do not update item not mentioned unless reply says all available/all not available.
+
+Requested Items:
+${itemsText}
+
+Shed Reply:
+${replyText}
+`;
+
+  let lastError;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await callGeminiWithTimeout(prompt, 20000);
+      const parsed = safeJsonParse(getAIText(response));
+
+      if (!parsed || !Array.isArray(parsed.responses)) {
+        throw new Error("Invalid Gemini shed JSON");
+      }
+
+      return {
+        responses: parsed.responses.map((r) => ({
+          lineNo: Number(r.lineNo) || 0,
+          checkId: String(r.checkId || ""),
+          status: String(r.status || "unclear"),
+          availableSize: String(r.availableSize || ""),
+          availableQuantity: Number(r.availableQuantity) || 0,
+          unit: String(r.unit || "Nos"),
+          remark: String(r.remark || ""),
+          confidence: Number(r.confidence) || 0,
+        })),
+        overallConfidence: Number(parsed.overallConfidence) || 0,
+        extractionSource: "ai",
+      };
+    } catch (error) {
+      lastError = error;
+      console.error(`Gemini shed attempt ${attempt} failed:`, error.message);
+      if (attempt < 3) await sleep(2000 * attempt);
+    }
+  }
+
+  throw lastError;
+};
+
 const extractShedAvailabilityFromReply = async ({ replyText, materialChecks }) => {
-  // AI disabled for now. Keep for future.
-  /*
   try {
-    const aiResult = await extractShedAvailabilityFromAI({ replyText, materialChecks });
+    const aiResult = await extractShedAvailabilityFromAI({
+      replyText,
+      materialChecks,
+    });
+
     if (aiResult.responses?.length) return aiResult;
   } catch (error) {
-    console.error("Shed AI failed, using regex:", error.message);
+    console.error("Gemini shed failed, using regex fallback:", error.message);
   }
-  */
 
   const regexResult = extractShedAvailabilityByRegex({
     replyText,

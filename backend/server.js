@@ -1,45 +1,69 @@
 require("dotenv").config();
 
+const http = require("http");
+
 const app = require("./src/app");
 const connectDB = require("./src/config/db");
+
+const ensureChromium = require("./src/utils/ensureChromium");
 const { initWhatsapp } = require("./src/services/whatsappService");
-const {
-  startMaterialEscalationCron,
-} = require("./src/jobs/materialEscalationCron");
-const {
-  startWhatsappBufferCron,
-} = require("./src/jobs/whatsappBufferCron");
+
+const startWhatsappHealthCron = require("./src/jobs/whatsappHealthCron");
+const { startMaterialEscalationCron } = require("./src/jobs/materialEscalationCron");
 
 const PORT = process.env.PORT || 5000;
 
-/* ================= HEALTH CHECK ================= */
+let booted = false;
 
-app.get("/", (req, res) => {
-  res.status(200).json({
-    success: true,
-    application: "E2D Backend",
-    status: "Running",
-    timestamp: new Date(),
-  });
-});
-
-/* ================= START SERVER ================= */
-
-const startServer = async () => {
-  try {
-    await connectDB();
-
-    app.listen(PORT, async () => {
-      console.log(`E2D backend running on port ${PORT}`);
-
-      //await initWhatsapp();
-      startWhatsappBufferCron();
-      startMaterialEscalationCron();
-    });
-  } catch (error) {
-    console.error("Server startup failed:", error.message);
-    process.exit(1);
+const startApp = async () => {
+  if (booted) {
+    console.log("App already booted. Skipping duplicate init.");
+    return;
   }
+
+  booted = true;
+
+  await connectDB();
+
+  const server = http.createServer(app);
+
+  server.listen(PORT, async () => {
+    console.log(`E2D backend running on port ${PORT}`);
+
+    if (process.env.ENABLE_BACKGROUND_JOBS === "true") {
+      console.log("Starting E2D background jobs...");
+
+      try {
+        await ensureChromium();
+      } catch (error) {
+        console.log("Chromium setup failed:", error.message);
+      }
+
+      try {
+        await initWhatsapp();
+      } catch (error) {
+        console.log("WhatsApp startup failed:", error.message);
+      }
+
+      try {
+        startWhatsappHealthCron();
+      } catch (error) {
+        console.log("WhatsApp health cron failed to start:", error.message);
+      }
+
+      try {
+        startMaterialEscalationCron();
+      } catch (error) {
+        console.log("Material escalation cron failed to start:", error.message);
+      }
+    } else {
+      console.log("Background jobs disabled.");
+      console.log("Set ENABLE_BACKGROUND_JOBS=true on Hostinger only.");
+    }
+  });
 };
 
-startServer();
+startApp().catch((error) => {
+  console.error("E2D startup failed:", error);
+  process.exit(1);
+});
