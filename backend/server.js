@@ -1,11 +1,18 @@
 require("dotenv").config();
 
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT:", err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED:", err);
+});
+
 const http = require("http");
 
 const app = require("./src/app");
 const connectDB = require("./src/config/db");
 
-const ensureChromium = require("./src/utils/ensureChromium");
 const { initWhatsapp } = require("./src/services/whatsappService");
 
 const startWhatsappHealthCron = require("./src/jobs/whatsappHealthCron");
@@ -23,7 +30,11 @@ const startApp = async () => {
 
   booted = true;
 
+  console.log("E2D BOOT STARTED");
+
   await connectDB();
+
+  console.log("MONGO CONNECTED");
 
   const server = http.createServer(app);
 
@@ -32,12 +43,6 @@ const startApp = async () => {
 
     if (process.env.ENABLE_BACKGROUND_JOBS === "true") {
       console.log("Starting E2D background jobs...");
-
-      try {
-        await ensureChromium();
-      } catch (error) {
-        console.log("Chromium setup failed:", error.message);
-      }
 
       try {
         await initWhatsapp();
