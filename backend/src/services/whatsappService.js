@@ -129,7 +129,6 @@ const initWhatsapp = async () => {
     "--disable-breakpad",
     "--disable-features=site-per-process,TranslateUI",
   ],
-  userDataDir: path.join(whatsappSessionPath, "chrome-user-data"),
 },
   });
 
