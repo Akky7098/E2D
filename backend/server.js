@@ -16,7 +16,8 @@ const connectDB = require("./src/config/db");
 const { initWhatsapp } = require("./src/services/whatsappService");
 
 const startWhatsappHealthCron = require("./src/jobs/whatsappHealthCron");
-const { startMaterialEscalationCron } = require("./src/jobs/materialEscalationCron");
+const startWhatsappBufferCron = require("./src/jobs/whatsappBufferCron");
+ const { startMaterialEscalationCron } = require("./src/jobs/materialEscalationCron");
 
 const PORT = process.env.PORT || 5000;
 
@@ -56,11 +57,18 @@ const startApp = async () => {
         console.log("WhatsApp health cron failed to start:", error.message);
       }
 
-      // try {
-      //   startMaterialEscalationCron();
-      // } catch (error) {
-      //   console.log("Material escalation cron failed to start:", error.message);
-      // }
+      try {
+        startWhatsappBufferCron();
+      } catch (error) {
+        console.log("WhatsApp buffer cron failed to start:", error.message);
+      }
+
+     // Enable later only after WhatsApp + buffer flow is stable
+      try {
+        startMaterialEscalationCron();
+      } catch (error) {
+        console.log("Material escalation cron failed to start:", error.message);
+      }
     } else {
       console.log("Background jobs disabled.");
       console.log("Set ENABLE_BACKGROUND_JOBS=true on Hostinger only.");
